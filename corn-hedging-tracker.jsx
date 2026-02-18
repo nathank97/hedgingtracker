@@ -326,7 +326,7 @@ export default function CornHedgingTracker() {
   }, [selectedYear, consumption, production, hedges]);
 
   // ── Hedge Form ─────────────────────────────────────────────────────
-  const emptyHedge = { entity: "Hog Finishing", cropYear: selectedYear, contractType: "Futures", contractMonth: "Jul", quantity: "", direction: "Long", price: "", dateEntered: new Date().toISOString().slice(0, 10), notes: "" };
+  const emptyHedge = { entity: "Hog Finishing", cropYear: selectedYear, contractType: "Futures", contractMonth: "Jul", quantity: "", direction: "Long", price: "", dateEntered: new Date().toISOString().slice(0, 10), notes: "", cornType: "" };
   const [hedgeForm, setHedgeForm] = useState(emptyHedge);
 
   const openNewHedge = () => {
@@ -790,6 +790,50 @@ export default function CornHedgingTracker() {
               </table>
             </div>
 
+            {/* Net Position by Corn Type */}
+            {(() => {
+              const prod = production?.[selectedYear] || {};
+              const cashPositions = hedges.filter(h => h.cropYear === selectedYear && h.entity === "Farming" && h.contractType === "Cash Position");
+              const rows = CORN_TYPES.map(ct => {
+                const prodVal = prod[ct] || 0;
+                const sold = cashPositions.filter(h => h.cornType === ct).reduce((s, h) => s + (h.quantity || 0), 0);
+                return { cornType: ct, production: prodVal, sold, net: prodVal - sold };
+              });
+              const totals = rows.reduce((acc, r) => ({ production: acc.production + r.production, sold: acc.sold + r.sold, net: acc.net + r.net }), { production: 0, sold: 0, net: 0 });
+              return (
+                <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 8, overflow: "hidden" }}>
+                  <div style={{ padding: "16px 24px", borderBottom: `1px solid ${COLORS.border}` }}>
+                    <h3 style={{ fontSize: 14, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: COLORS.accent }}>NET POSITION BY CORN TYPE — {selectedYear}</h3>
+                  </div>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "'JetBrains Mono', monospace", fontSize: 13 }}>
+                    <thead>
+                      <tr style={{ background: COLORS.surfaceAlt }}>
+                        {["Corn Type", "Production", "Sold", "Net"].map(h => (
+                          <th key={h} style={{ padding: "12px 16px", textAlign: "left", color: COLORS.textMuted, fontWeight: 600, fontSize: 11, letterSpacing: 0.5, textTransform: "uppercase", borderBottom: `1px solid ${COLORS.border}` }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map(r => (
+                        <tr key={r.cornType} style={{ borderBottom: `1px solid ${COLORS.border}` }}>
+                          <td style={{ padding: "10px 16px", fontWeight: 600 }}>{r.cornType}</td>
+                          <td style={{ padding: "10px 16px", color: COLORS.green }}>{fmtFull(r.production)}</td>
+                          <td style={{ padding: "10px 16px", color: COLORS.red }}>{fmtFull(r.sold)}</td>
+                          <td style={{ padding: "10px 16px", fontWeight: 700, color: r.net >= 0 ? COLORS.green : COLORS.red }}>{fmtFull(r.net)}</td>
+                        </tr>
+                      ))}
+                      <tr style={{ background: COLORS.surfaceAlt }}>
+                        <td style={{ padding: "12px 16px", fontWeight: 800, color: COLORS.accent }}>Total</td>
+                        <td style={{ padding: "12px 16px", fontWeight: 700, color: COLORS.green }}>{fmtFull(totals.production)}</td>
+                        <td style={{ padding: "12px 16px", fontWeight: 700, color: COLORS.red }}>{fmtFull(totals.sold)}</td>
+                        <td style={{ padding: "12px 16px", fontWeight: 800, color: totals.net >= 0 ? COLORS.green : COLORS.red }}>{fmtFull(totals.net)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
+
             {/* Farming hedges */}
             <HedgeTable
               hedges={hedges.filter(h => h.cropYear === selectedYear && h.entity === "Farming")}
@@ -924,6 +968,19 @@ export default function CornHedgingTracker() {
             <Select label="Contract Type" value={hedgeForm.contractType} onChange={e => setHedgeForm(p => ({ ...p, contractType: e.target.value }))} options={CONTRACT_TYPES} style={{ flex: 1 }} />
             <Select label="Contract Month" value={hedgeForm.contractMonth} onChange={e => setHedgeForm(p => ({ ...p, contractMonth: e.target.value }))} options={CONTRACT_MONTHS} style={{ flex: 1 }} />
           </div>
+          {hedgeForm.entity === "Farming" && hedgeForm.contractType === "Cash Position" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <label style={{ fontSize: 11, color: COLORS.textMuted, fontWeight: 600, letterSpacing: 0.5, textTransform: "uppercase", fontFamily: "'JetBrains Mono', monospace" }}>Corn Type</label>
+              <select value={hedgeForm.cornType} onChange={e => setHedgeForm(p => ({ ...p, cornType: e.target.value }))} style={{
+                background: COLORS.surfaceAlt, border: `1px solid ${COLORS.border}`, borderRadius: 6,
+                padding: "8px 12px", color: COLORS.text, fontSize: 14, outline: "none",
+                fontFamily: "'JetBrains Mono', monospace",
+              }}>
+                <option value="">Select corn type...</option>
+                {CORN_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+          )}
           <div style={{ display: "flex", gap: 12 }}>
             <Select label="Direction" value={hedgeForm.direction} onChange={e => setHedgeForm(p => ({ ...p, direction: e.target.value }))} options={DIRECTIONS} style={{ flex: 1 }} />
             <Input label="Quantity (bushels)" type="number" value={hedgeForm.quantity} onChange={e => setHedgeForm(p => ({ ...p, quantity: e.target.value }))} placeholder="e.g. 500000" style={{ flex: 1 }} />
