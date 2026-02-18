@@ -28,7 +28,7 @@ const COLORS = {
 
 const DEFAULT_CROP_YEARS = ["2024", "2025", "2026", "2027"];
 const ENTITIES = ["Hog Finishing", "Feedlot", "Farming"];
-const CONTRACT_TYPES = ["Futures", "Options", "HTA", "Basis Contract"];
+const CONTRACT_TYPES = ["Futures", "Options", "Cash Position"];
 const CONTRACT_MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const DIRECTIONS = ["Long", "Short"];
 const CORN_TYPES = ["High Moisture Corn", "Dry Corn", "Silage Corn"];
@@ -621,7 +621,7 @@ export default function CornHedgingTracker() {
               <h2 style={{ fontSize: 22, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace" }}>Hedge Positions — {selectedYear}</h2>
               <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
                 <Select value={entityFilter} onChange={e => setEntityFilter(e.target.value)} options={["All", ...ENTITIES]} />
-                <Btn onClick={openNewHedge}>+ New Hedge</Btn>
+                <Btn onClick={openNewHedge}>+ New Position</Btn>
               </div>
             </div>
 
@@ -725,7 +725,7 @@ export default function CornHedgingTracker() {
                 <h2 style={{ fontSize: 22, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace" }}>Farming Operations</h2>
                 <p style={{ color: COLORS.textMuted, fontSize: 13, marginTop: 4 }}>Corn production by type — Crop Year {selectedYear}</p>
               </div>
-              <Btn onClick={openNewHedge}>+ New Hedge</Btn>
+              <Btn onClick={openNewHedge}>+ New Position</Btn>
             </div>
 
             {/* Production inputs */}
@@ -914,7 +914,7 @@ export default function CornHedgingTracker() {
       </main>
 
       {/* ─── Hedge Modal ──────────────────────────────────────────── */}
-      <Modal open={hedgeModalOpen} onClose={() => setHedgeModalOpen(false)} title={editingHedge ? "Edit Hedge Position" : "New Hedge Position"}>
+      <Modal open={hedgeModalOpen} onClose={() => setHedgeModalOpen(false)} title={editingHedge ? "Edit Position" : "New Position"}>
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           <div style={{ display: "flex", gap: 12 }}>
             <Select label="Entity" value={hedgeForm.entity} onChange={e => setHedgeForm(p => ({ ...p, entity: e.target.value }))} options={ENTITIES} style={{ flex: 1 }} />
@@ -936,7 +936,7 @@ export default function CornHedgingTracker() {
           <div style={{ display: "flex", gap: 12, marginTop: 8, justifyContent: "flex-end" }}>
             <Btn variant="secondary" onClick={() => setHedgeModalOpen(false)}>Cancel</Btn>
             <Btn onClick={saveHedge} disabled={!hedgeForm.quantity || parseInt(hedgeForm.quantity) <= 0}>
-              {editingHedge ? "Update Hedge" : "Add Hedge"}
+              {editingHedge ? "Update Position" : "Add Position"}
             </Btn>
           </div>
         </div>
@@ -961,7 +961,7 @@ function EntityView({ title, subtitle, entity, consumption, updateConsumption, h
           <h2 style={{ fontSize: 22, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace" }}>{title}</h2>
           <p style={{ color: COLORS.textMuted, fontSize: 13, marginTop: 4 }}>{subtitle}</p>
         </div>
-        <Btn onClick={openNewHedge}>+ New Hedge</Btn>
+        <Btn onClick={openNewHedge}>+ New Position</Btn>
       </div>
 
       {/* Consumption inputs by year */}
