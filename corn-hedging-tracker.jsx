@@ -645,7 +645,19 @@ export default function CornHedgingTracker() {
                       <tr key={y} style={{ borderBottom: `1px solid ${COLORS.border}`, background: y === selectedYear ? COLORS.accent + "08" : "transparent" }}>
                         <td style={{ padding: "12px 16px", fontWeight: 700, color: y === selectedYear ? COLORS.accent : COLORS.text }}>{y}</td>
                         {CORN_TYPES.map(t => (
-                          <td key={t} style={{ padding: "12px 16px" }}>{fmtFull(p[t] || 0)}</td>
+                          <td key={t} style={{ padding: "4px 8px" }}>
+                            <input
+                              type="number"
+                              value={p[t] || ""}
+                              onChange={e => updateProduction(y, t, e.target.value)}
+                              placeholder="0"
+                              style={{
+                                background: COLORS.surfaceAlt, border: `1px solid ${COLORS.border}`, borderRadius: 6,
+                                padding: "6px 10px", color: COLORS.text, fontSize: 13, outline: "none", width: "100%",
+                                fontFamily: "'JetBrains Mono', monospace",
+                              }}
+                            />
+                          </td>
                         ))}
                         <td style={{ padding: "12px 16px", fontWeight: 700, color: COLORS.green }}>{fmtFull(total)}</td>
                       </tr>
