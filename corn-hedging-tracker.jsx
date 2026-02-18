@@ -25,7 +25,7 @@ const COLORS = {
   orangeDim: "#6B3410",
 };
 
-const CROP_YEARS = ["2024", "2025", "2026", "2027"];
+const DEFAULT_CROP_YEARS = ["2024", "2025", "2026", "2027"];
 const ENTITIES = ["Hog Finishing", "Feedlot", "Farming"];
 const CONTRACT_TYPES = ["Futures", "Options", "HTA", "Basis Contract"];
 const CONTRACT_MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -192,6 +192,26 @@ export default function CornHedgingTracker() {
   const [hedgeModalOpen, setHedgeModalOpen] = useState(false);
   const [editingHedge, setEditingHedge] = useState(null);
   const [entityFilter, setEntityFilter] = useState("All");
+  const [cropYears, setCropYears] = useState(DEFAULT_CROP_YEARS);
+  const [showYearManager, setShowYearManager] = useState(false);
+  const [newYear, setNewYear] = useState("");
+
+  const addCropYear = () => {
+    const y = newYear.trim();
+    if (!y || cropYears.includes(y) || !/^\d{4}$/.test(y)) return;
+    const updated = [...cropYears, y].sort();
+    setCropYears(updated);
+    setNewYear("");
+    addAudit("Year Added", "System", `Crop year ${y} added`);
+  };
+
+  const removeCropYear = (y) => {
+    if (cropYears.length <= 1) return;
+    if (!confirm(`Remove crop year ${y}? This will not delete existing hedge data.`)) return;
+    setCropYears(prev => prev.filter(yr => yr !== y));
+    if (selectedYear === y) setSelectedYear(cropYears.find(yr => yr !== y));
+    addAudit("Year Removed", "System", `Crop year ${y} removed`);
+  };
 
   const addAudit = useCallback((action, entity, details) => {
     setAuditLog(prev => [createAuditEntry(action, entity, details), ...prev]);
@@ -308,7 +328,7 @@ export default function CornHedgingTracker() {
 
   // ── Chart Data ─────────────────────────────────────────────────────
   const exposureChartData = useMemo(() => {
-    return CROP_YEARS.map(y => {
+    return cropYears.map(y => {
       const hc = consumption["Hog Finishing"][y] || 0;
       const fc = consumption["Feedlot"][y] || 0;
       const p = Object.values(production[y] || {}).reduce((s, v) => s + (v || 0), 0);
@@ -323,7 +343,7 @@ export default function CornHedgingTracker() {
         "Net Position": (p - hc - fc) + th,
       };
     });
-  }, [consumption, production, hedges]);
+  }, [consumption, production, hedges, cropYears]);
 
   // ── Filtered Hedges ────────────────────────────────────────────────
   const filteredHedges = useMemo(() => {
@@ -364,8 +384,11 @@ export default function CornHedgingTracker() {
             </div>
           </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          <Select value={selectedYear} onChange={e => setSelectedYear(e.target.value)} options={CROP_YEARS} />
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <Select value={selectedYear} onChange={e => setSelectedYear(e.target.value)} options={cropYears} />
+          <Btn variant="secondary" onClick={() => setShowYearManager(p => !p)} style={{ padding: "8px 12px", fontSize: 12 }}>
+            {showYearManager ? "✕" : "± Years"}
+          </Btn>
           <div style={{
             width: 36, height: 36, borderRadius: "50%", background: COLORS.accent,
             display: "flex", alignItems: "center", justifyContent: "center",
@@ -373,6 +396,41 @@ export default function CornHedgingTracker() {
           }}>CU</div>
         </div>
       </header>
+
+      {/* ─── Year Manager Bar ────────────────────────────────────── */}
+      {showYearManager && (
+        <div style={{
+          background: COLORS.surfaceAlt, borderBottom: `1px solid ${COLORS.border}`,
+          padding: "12px 32px", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap",
+        }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: COLORS.textMuted, fontFamily: "'JetBrains Mono', monospace", letterSpacing: 0.5 }}>CROP YEARS:</span>
+          {cropYears.map(y => (
+            <div key={y} style={{
+              display: "flex", alignItems: "center", gap: 6, background: COLORS.surface,
+              border: `1px solid ${COLORS.border}`, borderRadius: 6, padding: "4px 10px",
+            }}>
+              <span style={{ fontSize: 13, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace", color: COLORS.text }}>{y}</span>
+              <button onClick={() => removeCropYear(y)} style={{
+                background: "none", border: "none", color: COLORS.red, cursor: "pointer",
+                fontSize: 14, lineHeight: 1, padding: "0 2px", fontWeight: 700,
+              }}>✕</button>
+            </div>
+          ))}
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <input
+              type="text" value={newYear} onChange={e => setNewYear(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && addCropYear()}
+              placeholder="e.g. 2028" maxLength={4}
+              style={{
+                background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 6,
+                padding: "6px 10px", color: COLORS.text, fontSize: 13, width: 90, outline: "none",
+                fontFamily: "'JetBrains Mono', monospace",
+              }}
+            />
+            <Btn onClick={addCropYear} style={{ padding: "6px 14px", fontSize: 12 }}>+ Add</Btn>
+          </div>
+        </div>
+      )}
 
       {/* ─── Navigation ─────────────────────────────────────────── */}
       <nav style={{ background: COLORS.surface, borderBottom: `1px solid ${COLORS.border}`, padding: "0 32px", display: "flex", gap: 0 }}>
@@ -383,6 +441,7 @@ export default function CornHedgingTracker() {
           ["feedlot", "Feedlot"],
           ["farming", "Farming"],
           ["audit", "Audit Log"],
+          ["changelog", "Changelog"],
         ].map(([key, label]) => (
           <Tab key={key} active={activeTab === key} onClick={() => setActiveTab(key)}>{label}</Tab>
         ))}
@@ -570,6 +629,7 @@ export default function CornHedgingTracker() {
             hedges={hedges}
             selectedYear={selectedYear}
             calc={calc}
+            cropYears={cropYears}
             openNewHedge={openNewHedge}
             openEditHedge={openEditHedge}
             deleteHedge={deleteHedge}
@@ -588,6 +648,7 @@ export default function CornHedgingTracker() {
             hedges={hedges}
             selectedYear={selectedYear}
             calc={calc}
+            cropYears={cropYears}
             openNewHedge={openNewHedge}
             openEditHedge={openEditHedge}
             deleteHedge={deleteHedge}
@@ -638,7 +699,7 @@ export default function CornHedgingTracker() {
                   </tr>
                 </thead>
                 <tbody>
-                  {CROP_YEARS.map(y => {
+                  {cropYears.map(y => {
                     const p = production[y] || {};
                     const total = Object.values(p).reduce((s, v) => s + (v || 0), 0);
                     return (
@@ -721,6 +782,61 @@ export default function CornHedgingTracker() {
             </div>
           </div>
         )}
+
+        {/* ═══════ CHANGELOG ═══════ */}
+        {activeTab === "changelog" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+            <h2 style={{ fontSize: 22, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace" }}>Changelog</h2>
+
+            {[
+              {
+                version: "1.3.0", date: "2026-02-18",
+                changes: [
+                  "Added ability to add and remove crop years dynamically",
+                  "Added this Changelog tab for version tracking",
+                ],
+              },
+              {
+                version: "1.2.0", date: "2026-02-18",
+                changes: [
+                  "Made production-by-year table editable for all years (not just selected year)",
+                ],
+              },
+              {
+                version: "1.1.0", date: "2026-02-18",
+                changes: [
+                  "Added Vite project scaffolding (package.json, vite.config.js, index.html, src/main.jsx)",
+                  "Added inline favicon to fix 404 error",
+                ],
+              },
+              {
+                version: "1.0.0", date: "2026-02-18",
+                changes: [
+                  "Initial release of Corn Hedging Tracker",
+                  "Executive Summary dashboard with KPIs and multi-year exposure chart",
+                  "Hedge position management (create, edit, delete) with audit logging",
+                  "Entity views for Hog Finishing, Feedlot, and Farming operations",
+                  "Consumption and production tracking by crop year",
+                  "Recharts-powered bar chart for multi-year exposure overview",
+                ],
+              },
+            ].map(release => (
+              <div key={release.version} style={{
+                background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: 24,
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+                  <span style={{ fontSize: 18, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace", color: COLORS.accent }}>v{release.version}</span>
+                  <Badge color={COLORS.textMuted}>{release.date}</Badge>
+                </div>
+                <ul style={{ margin: 0, paddingLeft: 20 }}>
+                  {release.changes.map((c, i) => (
+                    <li key={i} style={{ color: COLORS.text, fontSize: 14, marginBottom: 6, lineHeight: 1.5 }}>{c}</li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        )}
       </main>
 
       {/* ─── Hedge Modal ──────────────────────────────────────────── */}
@@ -728,7 +844,7 @@ export default function CornHedgingTracker() {
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           <div style={{ display: "flex", gap: 12 }}>
             <Select label="Entity" value={hedgeForm.entity} onChange={e => setHedgeForm(p => ({ ...p, entity: e.target.value }))} options={ENTITIES} style={{ flex: 1 }} />
-            <Select label="Crop Year" value={hedgeForm.cropYear} onChange={e => setHedgeForm(p => ({ ...p, cropYear: e.target.value }))} options={CROP_YEARS} style={{ flex: 1 }} />
+            <Select label="Crop Year" value={hedgeForm.cropYear} onChange={e => setHedgeForm(p => ({ ...p, cropYear: e.target.value }))} options={cropYears} style={{ flex: 1 }} />
           </div>
           <div style={{ display: "flex", gap: 12 }}>
             <Select label="Contract Type" value={hedgeForm.contractType} onChange={e => setHedgeForm(p => ({ ...p, contractType: e.target.value }))} options={CONTRACT_TYPES} style={{ flex: 1 }} />
@@ -756,7 +872,7 @@ export default function CornHedgingTracker() {
 }
 
 // ─── Entity Detail View (Consumer) ────────────────────────────────────
-function EntityView({ title, subtitle, entity, consumption, updateConsumption, hedges, selectedYear, calc, openNewHedge, openEditHedge, deleteHedge }) {
+function EntityView({ title, subtitle, entity, consumption, updateConsumption, hedges, selectedYear, calc, cropYears, openNewHedge, openEditHedge, deleteHedge }) {
   const cons = consumption[entity];
   const entityHedges = hedges.filter(h => h.cropYear === selectedYear && h.entity === entity);
   const netCash = entity === "Hog Finishing" ? calc.hogNetCash : calc.feedNetCash;
@@ -778,7 +894,7 @@ function EntityView({ title, subtitle, entity, consumption, updateConsumption, h
       <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: 24 }}>
         <h3 style={{ fontSize: 14, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: COLORS.accent, marginBottom: 20 }}>PLANNED CONSUMPTION BY YEAR</h3>
         <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-          {CROP_YEARS.map(y => (
+          {cropYears.map(y => (
             <Input
               key={y} label={`Crop Year ${y}`} type="number" style={{ flex: 1, minWidth: 180 }}
               value={cons[y] || ""}
