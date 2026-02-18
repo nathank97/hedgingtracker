@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell, ReferenceLine } from "recharts";
+import { useFirebaseState } from "./src/useFirebaseState";
 
 // ─── Theme & Constants ───────────────────────────────────────────────
 const COLORS = {
@@ -47,28 +48,40 @@ let _id = 0;
 const genId = () => `id_${++_id}_${Date.now()}`;
 
 // ─── Default Data ─────────────────────────────────────────────────────
-const defaultConsumption = () => ({
+const defaultConsumption = {
   "Hog Finishing": { "2024": 2400000, "2025": 2600000, "2026": 2800000, "2027": 3000000 },
   "Feedlot": { "2024": 1800000, "2025": 1950000, "2026": 2100000, "2027": 2200000 },
-});
+};
 
-const defaultProduction = () => ({
+const defaultProduction = {
   "2024": { "High Moisture Corn": 1200000, "Dry Corn": 2800000, "Silage Corn": 400000 },
   "2025": { "High Moisture Corn": 1300000, "Dry Corn": 3000000, "Silage Corn": 450000 },
   "2026": { "High Moisture Corn": 1400000, "Dry Corn": 3200000, "Silage Corn": 500000 },
   "2027": { "High Moisture Corn": 1500000, "Dry Corn": 3400000, "Silage Corn": 550000 },
-});
+};
 
-const defaultHedges = () => [
-  { id: genId(), entity: "Hog Finishing", cropYear: "2025", contractType: "Futures", contractMonth: "Jul", quantity: 500000, direction: "Long", price: 4.85, dateEntered: "2025-01-15", notes: "Q3 coverage" },
-  { id: genId(), entity: "Hog Finishing", cropYear: "2025", contractType: "Options", contractMonth: "Sep", quantity: 300000, direction: "Long", price: 4.92, dateEntered: "2025-02-01", notes: "Put protection" },
-  { id: genId(), entity: "Feedlot", cropYear: "2025", contractType: "Futures", contractMonth: "May", quantity: 400000, direction: "Long", price: 4.78, dateEntered: "2025-01-20", notes: "Spring feed lock" },
-  { id: genId(), entity: "Feedlot", cropYear: "2025", contractType: "HTA", contractMonth: "Jul", quantity: 250000, direction: "Long", price: 4.90, dateEntered: "2025-02-10", notes: "" },
-  { id: genId(), entity: "Farming", cropYear: "2025", contractType: "Futures", contractMonth: "Dec", quantity: 600000, direction: "Short", price: 5.05, dateEntered: "2025-01-10", notes: "Harvest hedge" },
-  { id: genId(), entity: "Farming", cropYear: "2025", contractType: "Basis Contract", contractMonth: "Nov", quantity: 350000, direction: "Short", price: -0.15, dateEntered: "2025-02-05", notes: "Basis lock" },
-  { id: genId(), entity: "Hog Finishing", cropYear: "2026", contractType: "Futures", contractMonth: "Mar", quantity: 200000, direction: "Long", price: 5.10, dateEntered: "2025-03-01", notes: "Early 2026 coverage" },
-  { id: genId(), entity: "Farming", cropYear: "2026", contractType: "Futures", contractMonth: "Dec", quantity: 400000, direction: "Short", price: 5.15, dateEntered: "2025-03-05", notes: "Forward sale" },
-];
+// Hedges stored as object keyed by ID for Firebase (prevents conflicts)
+const defaultHedgesObj = (() => {
+  const entries = [
+    { entity: "Hog Finishing", cropYear: "2025", contractType: "Futures", contractMonth: "Jul", quantity: 500000, direction: "Long", price: 4.85, dateEntered: "2025-01-15", notes: "Q3 coverage" },
+    { entity: "Hog Finishing", cropYear: "2025", contractType: "Options", contractMonth: "Sep", quantity: 300000, direction: "Long", price: 4.92, dateEntered: "2025-02-01", notes: "Put protection" },
+    { entity: "Feedlot", cropYear: "2025", contractType: "Futures", contractMonth: "May", quantity: 400000, direction: "Long", price: 4.78, dateEntered: "2025-01-20", notes: "Spring feed lock" },
+    { entity: "Feedlot", cropYear: "2025", contractType: "HTA", contractMonth: "Jul", quantity: 250000, direction: "Long", price: 4.90, dateEntered: "2025-02-10", notes: "" },
+    { entity: "Farming", cropYear: "2025", contractType: "Futures", contractMonth: "Dec", quantity: 600000, direction: "Short", price: 5.05, dateEntered: "2025-01-10", notes: "Harvest hedge" },
+    { entity: "Farming", cropYear: "2025", contractType: "Basis Contract", contractMonth: "Nov", quantity: 350000, direction: "Short", price: -0.15, dateEntered: "2025-02-05", notes: "Basis lock" },
+    { entity: "Hog Finishing", cropYear: "2026", contractType: "Futures", contractMonth: "Mar", quantity: 200000, direction: "Long", price: 5.10, dateEntered: "2025-03-01", notes: "Early 2026 coverage" },
+    { entity: "Farming", cropYear: "2026", contractType: "Futures", contractMonth: "Dec", quantity: 400000, direction: "Short", price: 5.15, dateEntered: "2025-03-05", notes: "Forward sale" },
+  ];
+  const obj = {};
+  entries.forEach(e => { const id = genId(); obj[id] = e; });
+  return obj;
+})();
+
+// Convert hedges object from Firebase to array for rendering
+const hedgesObjToArray = (obj) => {
+  if (!obj || typeof obj !== "object") return [];
+  return Object.entries(obj).map(([id, data]) => ({ id, ...data }));
+};
 
 // ─── Audit Log ────────────────────────────────────────────────────────
 const createAuditEntry = (action, entity, details) => ({
@@ -181,20 +194,62 @@ const Modal = ({ open, onClose, title, children }) => {
   );
 };
 
+// ─── Loading Screen ──────────────────────────────────────────────────
+const LoadingScreen = () => (
+  <div style={{
+    minHeight: "100vh", background: COLORS.bg, display: "flex", flexDirection: "column",
+    alignItems: "center", justifyContent: "center", gap: 16,
+  }}>
+    <div style={{
+      width: 56, height: 56, borderRadius: 12,
+      background: `linear-gradient(135deg, ${COLORS.accent}, ${COLORS.accentDim})`,
+      display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28,
+    }}>🌽</div>
+    <div style={{ color: COLORS.accent, fontSize: 18, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace", letterSpacing: 1 }}>
+      CORN HEDGE TRACKER
+    </div>
+    <div style={{ color: COLORS.textMuted, fontSize: 13, fontFamily: "'JetBrains Mono', monospace" }}>
+      Loading data...
+    </div>
+    <div style={{
+      width: 200, height: 4, background: COLORS.surfaceAlt, borderRadius: 2, overflow: "hidden", marginTop: 8,
+    }}>
+      <div style={{
+        width: "40%", height: "100%", background: COLORS.accent, borderRadius: 2,
+        animation: "loading 1.2s ease-in-out infinite alternate",
+      }} />
+    </div>
+    <style>{`
+      @keyframes loading {
+        from { margin-left: 0; }
+        to { margin-left: 60%; }
+      }
+    `}</style>
+  </div>
+);
+
 // ─── Main App ──────────────────────────────────────────────────────────
 export default function CornHedgingTracker() {
+  // ── Local-only UI state ──────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState("dashboard");
   const [selectedYear, setSelectedYear] = useState("2025");
-  const [consumption, setConsumption] = useState(defaultConsumption);
-  const [production, setProduction] = useState(defaultProduction);
-  const [hedges, setHedges] = useState(defaultHedges);
-  const [auditLog, setAuditLog] = useState([]);
   const [hedgeModalOpen, setHedgeModalOpen] = useState(false);
   const [editingHedge, setEditingHedge] = useState(null);
   const [entityFilter, setEntityFilter] = useState("All");
-  const [cropYears, setCropYears] = useState(DEFAULT_CROP_YEARS);
   const [showYearManager, setShowYearManager] = useState(false);
   const [newYear, setNewYear] = useState("");
+
+  // ── Firebase-synced state ────────────────────────────────────────────
+  const [consumption, setConsumption, consLoading] = useFirebaseState("consumption", defaultConsumption, { debounce: 500 });
+  const [production, setProduction, prodLoading] = useFirebaseState("production", defaultProduction, { debounce: 500 });
+  const [hedgesObj, setHedgesObj, hedgesLoading] = useFirebaseState("hedges", defaultHedgesObj);
+  const [cropYears, setCropYears, yearsLoading] = useFirebaseState("cropYears", DEFAULT_CROP_YEARS);
+  const [auditLog, setAuditLog, auditLoading] = useFirebaseState("auditLog", []);
+
+  const isLoading = consLoading || prodLoading || hedgesLoading || yearsLoading || auditLoading;
+
+  // Convert hedges object to array for all rendering/calculation
+  const hedges = useMemo(() => hedgesObjToArray(hedgesObj), [hedgesObj]);
 
   const addCropYear = () => {
     const y = newYear.trim();
@@ -214,17 +269,20 @@ export default function CornHedgingTracker() {
   };
 
   const addAudit = useCallback((action, entity, details) => {
-    setAuditLog(prev => [createAuditEntry(action, entity, details), ...prev]);
-  }, []);
+    setAuditLog(prev => {
+      const arr = Array.isArray(prev) ? prev : [];
+      return [createAuditEntry(action, entity, details), ...arr];
+    });
+  }, [setAuditLog]);
 
   // ── Calculations ───────────────────────────────────────────────────
   const calc = useMemo(() => {
     const y = selectedYear;
-    const hogCons = consumption["Hog Finishing"][y] || 0;
-    const feedCons = consumption["Feedlot"][y] || 0;
+    const hogCons = (consumption?.["Hog Finishing"]?.[y]) || 0;
+    const feedCons = (consumption?.["Feedlot"]?.[y]) || 0;
     const totalCons = hogCons + feedCons;
 
-    const prod = production[y] || {};
+    const prod = production?.[y] || {};
     const totalProd = Object.values(prod).reduce((s, v) => s + (v || 0), 0);
 
     const netCash = totalProd - totalCons;
@@ -243,8 +301,6 @@ export default function CornHedgingTracker() {
     const farmHedge = hedgeByEntity("Farming");
     const totalHedge = hogHedge + feedHedge + farmHedge;
 
-    // Net position: consumers are short corn (negative), producers are long (positive)
-    // Hedges: long hedges offset short cash, short hedges offset long cash
     const hogNetCash = -hogCons;
     const feedNetCash = -feedCons;
     const farmNetCash = totalProd;
@@ -288,14 +344,15 @@ export default function CornHedgingTracker() {
   const saveHedge = () => {
     const qty = parseInt(hedgeForm.quantity);
     if (!qty || qty <= 0) return;
-    const entry = { ...hedgeForm, quantity: qty, price: hedgeForm.price ? parseFloat(hedgeForm.price) : null };
+    const { id: _formId, ...formData } = hedgeForm;
+    const entry = { ...formData, quantity: qty, price: hedgeForm.price ? parseFloat(hedgeForm.price) : null };
 
     if (editingHedge) {
-      setHedges(prev => prev.map(h => h.id === editingHedge ? { ...entry, id: editingHedge } : h));
+      setHedgesObj(prev => ({ ...prev, [editingHedge]: entry }));
       addAudit("Hedge Modified", entry.entity, `${entry.direction} ${fmtFull(qty)} bu ${entry.contractType} ${entry.contractMonth} ${entry.cropYear}`);
     } else {
-      const newH = { ...entry, id: genId() };
-      setHedges(prev => [...prev, newH]);
+      const newId = genId();
+      setHedgesObj(prev => ({ ...prev, [newId]: entry }));
       addAudit("Hedge Created", entry.entity, `${entry.direction} ${fmtFull(qty)} bu ${entry.contractType} ${entry.contractMonth} ${entry.cropYear}`);
     }
     setHedgeModalOpen(false);
@@ -303,35 +360,37 @@ export default function CornHedgingTracker() {
 
   const deleteHedge = (h) => {
     if (!confirm("Delete this hedge position?")) return;
-    setHedges(prev => prev.filter(x => x.id !== h.id));
+    setHedgesObj(prev => {
+      const next = { ...prev };
+      delete next[h.id];
+      return next;
+    });
     addAudit("Hedge Deleted", h.entity, `${h.direction} ${fmtFull(h.quantity)} bu ${h.contractType} ${h.contractMonth} ${h.cropYear}`);
   };
 
-  // ── Consumption / Production update helpers ────────────────────────
+  // ── Consumption / Production update helpers (no per-keystroke audit) ─
   const updateConsumption = (entity, year, val) => {
     const v = parseInt(val) || 0;
     setConsumption(prev => ({
       ...prev,
-      [entity]: { ...prev[entity], [year]: v }
+      [entity]: { ...(prev?.[entity] || {}), [year]: v }
     }));
-    addAudit("Consumption Updated", entity, `${year}: ${fmtFull(v)} bu`);
   };
 
   const updateProduction = (year, type, val) => {
     const v = parseInt(val) || 0;
     setProduction(prev => ({
       ...prev,
-      [year]: { ...prev[year], [type]: v }
+      [year]: { ...(prev?.[year] || {}), [type]: v }
     }));
-    addAudit("Production Updated", "Farming", `${year} ${type}: ${fmtFull(v)} bu`);
   };
 
   // ── Chart Data ─────────────────────────────────────────────────────
   const exposureChartData = useMemo(() => {
-    return cropYears.map(y => {
-      const hc = consumption["Hog Finishing"][y] || 0;
-      const fc = consumption["Feedlot"][y] || 0;
-      const p = Object.values(production[y] || {}).reduce((s, v) => s + (v || 0), 0);
+    return (cropYears || []).map(y => {
+      const hc = consumption?.["Hog Finishing"]?.[y] || 0;
+      const fc = consumption?.["Feedlot"]?.[y] || 0;
+      const p = Object.values(production?.[y] || {}).reduce((s, v) => s + (v || 0), 0);
       const yh = hedges.filter(h => h.cropYear === y);
       const th = yh.reduce((s, h) => s + (h.direction === "Long" ? h.quantity : -h.quantity), 0);
       return {
@@ -351,6 +410,9 @@ export default function CornHedgingTracker() {
     if (entityFilter !== "All") h = h.filter(x => x.entity === entityFilter);
     return h;
   }, [hedges, selectedYear, entityFilter]);
+
+  // ── Loading Screen ─────────────────────────────────────────────────
+  if (isLoading) return <LoadingScreen />;
 
   // ── Render ─────────────────────────────────────────────────────────
   return (
@@ -385,7 +447,7 @@ export default function CornHedgingTracker() {
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <Select value={selectedYear} onChange={e => setSelectedYear(e.target.value)} options={cropYears} />
+          <Select value={selectedYear} onChange={e => setSelectedYear(e.target.value)} options={cropYears || DEFAULT_CROP_YEARS} />
           <Btn variant="secondary" onClick={() => setShowYearManager(p => !p)} style={{ padding: "8px 12px", fontSize: 12 }}>
             {showYearManager ? "✕" : "± Years"}
           </Btn>
@@ -404,7 +466,7 @@ export default function CornHedgingTracker() {
           padding: "12px 32px", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap",
         }}>
           <span style={{ fontSize: 12, fontWeight: 700, color: COLORS.textMuted, fontFamily: "'JetBrains Mono', monospace", letterSpacing: 0.5 }}>CROP YEARS:</span>
-          {cropYears.map(y => (
+          {(cropYears || []).map(y => (
             <div key={y} style={{
               display: "flex", alignItems: "center", gap: 6, background: COLORS.surface,
               border: `1px solid ${COLORS.border}`, borderRadius: 6, padding: "4px 10px",
@@ -673,7 +735,7 @@ export default function CornHedgingTracker() {
                 {CORN_TYPES.map(t => (
                   <Input
                     key={t} label={t} type="number" style={{ flex: 1, minWidth: 200 }}
-                    value={production[selectedYear]?.[t] || ""}
+                    value={production?.[selectedYear]?.[t] || ""}
                     onChange={e => updateProduction(selectedYear, t, e.target.value)}
                     placeholder="Bushels"
                   />
@@ -699,8 +761,8 @@ export default function CornHedgingTracker() {
                   </tr>
                 </thead>
                 <tbody>
-                  {cropYears.map(y => {
-                    const p = production[y] || {};
+                  {(cropYears || []).map(y => {
+                    const p = production?.[y] || {};
                     const total = Object.values(p).reduce((s, v) => s + (v || 0), 0);
                     return (
                       <tr key={y} style={{ borderBottom: `1px solid ${COLORS.border}`, background: y === selectedYear ? COLORS.accent + "08" : "transparent" }}>
@@ -759,10 +821,10 @@ export default function CornHedgingTracker() {
                   </tr>
                 </thead>
                 <tbody>
-                  {auditLog.length === 0 && (
+                  {(!auditLog || auditLog.length === 0) && (
                     <tr><td colSpan={5} style={{ padding: 32, textAlign: "center", color: COLORS.textDim }}>No changes recorded yet. Make edits to see the audit trail.</td></tr>
                   )}
-                  {auditLog.slice(0, 50).map(a => (
+                  {(auditLog || []).slice(0, 50).map(a => (
                     <tr key={a.id} style={{ borderBottom: `1px solid ${COLORS.border}` }}>
                       <td style={{ padding: "10px 16px", color: COLORS.textMuted, whiteSpace: "nowrap", fontSize: 12 }}>{new Date(a.timestamp).toLocaleString()}</td>
                       <td style={{ padding: "10px 16px" }}>{a.user}</td>
@@ -789,6 +851,18 @@ export default function CornHedgingTracker() {
             <h2 style={{ fontSize: 22, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace" }}>Changelog</h2>
 
             {[
+              {
+                version: "2.0.0", date: "2026-02-18",
+                changes: [
+                  "Added Firebase Realtime Database for real-time multi-user sync",
+                  "All shared data (consumption, production, hedges, crop years, audit log) now persists and syncs across browsers",
+                  "Debounced writes for consumption/production inputs (500ms) to avoid flooding Firebase",
+                  "Hedges stored as object keyed by ID for conflict-free concurrent editing",
+                  "Added loading screen while Firebase data loads",
+                  "Removed per-keystroke audit entries for consumption/production changes",
+                  "Deployed to Vercel for public access",
+                ],
+              },
               {
                 version: "1.3.0", date: "2026-02-18",
                 changes: [
@@ -844,7 +918,7 @@ export default function CornHedgingTracker() {
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           <div style={{ display: "flex", gap: 12 }}>
             <Select label="Entity" value={hedgeForm.entity} onChange={e => setHedgeForm(p => ({ ...p, entity: e.target.value }))} options={ENTITIES} style={{ flex: 1 }} />
-            <Select label="Crop Year" value={hedgeForm.cropYear} onChange={e => setHedgeForm(p => ({ ...p, cropYear: e.target.value }))} options={cropYears} style={{ flex: 1 }} />
+            <Select label="Crop Year" value={hedgeForm.cropYear} onChange={e => setHedgeForm(p => ({ ...p, cropYear: e.target.value }))} options={cropYears || DEFAULT_CROP_YEARS} style={{ flex: 1 }} />
           </div>
           <div style={{ display: "flex", gap: 12 }}>
             <Select label="Contract Type" value={hedgeForm.contractType} onChange={e => setHedgeForm(p => ({ ...p, contractType: e.target.value }))} options={CONTRACT_TYPES} style={{ flex: 1 }} />
@@ -873,7 +947,7 @@ export default function CornHedgingTracker() {
 
 // ─── Entity Detail View (Consumer) ────────────────────────────────────
 function EntityView({ title, subtitle, entity, consumption, updateConsumption, hedges, selectedYear, calc, cropYears, openNewHedge, openEditHedge, deleteHedge }) {
-  const cons = consumption[entity];
+  const cons = consumption?.[entity] || {};
   const entityHedges = hedges.filter(h => h.cropYear === selectedYear && h.entity === entity);
   const netCash = entity === "Hog Finishing" ? calc.hogNetCash : calc.feedNetCash;
   const hedge = entity === "Hog Finishing" ? calc.hogHedge : calc.feedHedge;
@@ -894,7 +968,7 @@ function EntityView({ title, subtitle, entity, consumption, updateConsumption, h
       <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: 24 }}>
         <h3 style={{ fontSize: 14, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: COLORS.accent, marginBottom: 20 }}>PLANNED CONSUMPTION BY YEAR</h3>
         <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-          {cropYears.map(y => (
+          {(cropYears || []).map(y => (
             <Input
               key={y} label={`Crop Year ${y}`} type="number" style={{ flex: 1, minWidth: 180 }}
               value={cons[y] || ""}
